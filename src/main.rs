@@ -61,7 +61,14 @@ impl App {
 
     fn init_gpu(&mut self, window: Arc<Window>) {
         let size = window.inner_size();
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        // GL is excluded on purpose: on this NVIDIA/Wayland stack, wgpu's GLES
+        // backend segfaults during teardown inside libnvidia-egl-wayland's
+        // wl_proxy_marshal_flags. Vulkan doesn't have that bug and is what we
+        // want anyway.
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..Default::default()
+        });
         let surface = instance.create_surface(window.clone()).unwrap();
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

@@ -112,9 +112,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let t = d / hw;
 
     // Two lobes: a tight core that survives the bloom downsample as a bright
-    // line, and a wide low-energy skirt that reads as the beam itself glowing.
-    let core = exp(-t * t * 6.0);
-    let halo = exp(-t * t * 1.3) * 0.3;
+    // line, and a narrow low-energy skirt that reads as the beam glowing
+    // without softening the stroke itself. The skirt was originally wide and
+    // heavy (1.3 / 0.3), which read as blur rather than glow.
+    let core = exp(-t * t * 9.0);
+    let halo = exp(-t * t * 2.2) * 0.18;
 
     // Beam dwell. A real XY monitor decelerates the beam at each vertex, so
     // corners burn hotter than the middle of a stroke.

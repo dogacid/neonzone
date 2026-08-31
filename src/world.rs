@@ -85,30 +85,54 @@ fn pyramid(batch: &mut LineBatch, base: Vec3, size: f32, color: [f32; 3]) {
     }
 }
 
+// Tron (1982)'s tanks read nothing like a real-world turret-and-hull tank:
+// low, wide, and near bilaterally symmetric front-to-back (the recognizer
+// grid gave them no obvious front), a sloped wedge deck rather than a round
+// turret, and one raised center cabin as the only tall feature. Flat facets
+// throughout -- no cylinder ever reads honestly as a handful of line
+// segments, so nothing here tries to be one.
 fn tank(batch: &mut LineBatch, pos: Vec3, yaw: f32, color: [f32; 3]) {
     let (s, c) = yaw.sin_cos();
     let rot = |v: Vec3| Vec3::new(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) + pos;
     let mut edge = |a: Vec3, b: Vec3| batch.segment(rot(a).into(), rot(b).into(), color, 2.2, 1.9);
 
-    // Hull.
-    let (hw, hh, hl) = (3.0, 2.0, 5.0);
-    let hull = |sx: f32, sy: f32, sz: f32| Vec3::new(sx * hw, sy * hh, sz * hl);
-    for i in 0..4 {
-        let (a, b) = ([-1.0, 1.0, 1.0, -1.0][i], [-1.0, -1.0, 1.0, 1.0][i]);
-        let (c2, d) = ([-1.0, 1.0, 1.0, -1.0][(i + 1) % 4], [-1.0, -1.0, 1.0, 1.0][(i + 1) % 4]);
-        edge(hull(a, 0.0, b), hull(c2, 0.0, d));
-        edge(hull(a, 1.0, b), hull(c2, 1.0, d));
-        edge(hull(a, 0.0, b), hull(a, 1.0, b));
-    }
+    // Wireframe frustum: a rectangular ring at y0 sized (hw0, hl0) connected
+    // to another at y1 sized (hw1, hl1). A box is just hw0==hw1, hl0==hl1.
+    let mut frustum = |hw0: f32, hl0: f32, y0: f32, hw1: f32, hl1: f32, y1: f32| {
+        let sx = [-1.0f32, 1.0, 1.0, -1.0];
+        let sz = [-1.0f32, -1.0, 1.0, 1.0];
+        let lo = |i: usize| Vec3::new(sx[i] * hw0, y0, sz[i] * hl0);
+        let hi = |i: usize| Vec3::new(sx[i] * hw1, y1, sz[i] * hl1);
+        for i in 0..4 {
+            let j = (i + 1) % 4;
+            edge(lo(i), lo(j));
+            edge(hi(i), hi(j));
+            edge(lo(i), hi(i));
+        }
+    };
 
-    // Turret and barrel.
-    let t = 1.6;
-    for i in 0..4 {
-        let (a, b) = ([-1.0, 1.0, 1.0, -1.0][i], [-1.0, -1.0, 1.0, 1.0][i]);
-        let (c2, d) = ([-1.0, 1.0, 1.0, -1.0][(i + 1) % 4], [-1.0, -1.0, 1.0, 1.0][(i + 1) % 4]);
-        edge(Vec3::new(a * t, hh, b * t), Vec3::new(c2 * t, hh, d * t));
-        edge(Vec3::new(a * t, hh + 1.4, b * t), Vec3::new(c2 * t, hh + 1.4, d * t));
-        edge(Vec3::new(a * t, hh, b * t), Vec3::new(a * t, hh + 1.4, b * t));
+    // Low, wide wedge hull: sides slope inward toward a flat deck instead of
+    // sitting under a turret.
+    let (hw, hl, hh) = (4.2, 6.5, 1.6);
+    frustum(hw, hl, 0.0, hw * 0.72, hl * 0.9, hh);
+
+    // Raised center cabin -- the one tall feature, sat mid-deck.
+    let (cw, cl, ch) = (hw * 0.4, hl * 0.42, 1.5);
+    frustum(cw, cl, hh, cw * 0.85, cl * 0.85, hh + ch);
+
+    // Twin tread skirts along the flanks, long and low, same at both ends.
+    let (tw, tl, th) = (0.9, hl * 0.95, hh * 0.55);
+    for side in [-1.0f32, 1.0] {
+        let cx = side * (hw - tw * 0.5 - 0.1);
+        let sx = [-1.0f32, 1.0, 1.0, -1.0];
+        let sz = [-1.0f32, -1.0, 1.0, 1.0];
+        let lo = |i: usize| Vec3::new(cx + sx[i] * tw * 0.5, 0.0, sz[i] * tl);
+        let hi = |i: usize| Vec3::new(cx + sx[i] * tw * 0.5, th, sz[i] * tl);
+        for i in 0..4 {
+            let j = (i + 1) % 4;
+            edge(lo(i), lo(j));
+            edge(hi(i), hi(j));
+            edge(lo(i), hi(i));
+        }
     }
-    edge(Vec3::new(0.0, hh + 0.8, -t), Vec3::new(0.0, hh + 0.8, -hl - 3.5));
 }
