@@ -29,7 +29,8 @@ pub struct Post {
     targets: [wgpu::TextureView; 2],
     binds: [wgpu::BindGroup; 2],
     front: usize,
-    /// 0.0 = no persistence, 0.9 = long lazy trails. 0.86 is a good start.
+    /// 0.0 = no persistence, 0.9 = long lazy trails. 0.86 fanned into a smear
+    /// under sustained turning; 0.35 keeps a light afterglow without it.
     pub decay: f32,
     pub exposure: f32,
 }
@@ -114,7 +115,7 @@ impl Post {
             targets,
             binds,
             front: 0,
-            decay: 0.86,
+            decay: 0.35,
             exposure: 1.0,
         }
     }
