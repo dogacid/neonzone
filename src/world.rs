@@ -85,54 +85,88 @@ fn pyramid(batch: &mut LineBatch, base: Vec3, size: f32, color: [f32; 3]) {
     }
 }
 
-// Tron (1982)'s tanks read nothing like a real-world turret-and-hull tank:
-// low, wide, and near bilaterally symmetric front-to-back (the recognizer
-// grid gave them no obvious front), a sloped wedge deck rather than a round
-// turret, and one raised center cabin as the only tall feature. Flat facets
-// throughout -- no cylinder ever reads honestly as a handful of line
-// segments, so nothing here tries to be one.
+// Modeled after stevetalkowski's "TRON Tank" fan reconstruction (Sketchfab),
+// cross-checked against a film still: a wide flat wedge -- pointed nose,
+// flat rear, wider than it is deep -- carrying a genuinely round stepped
+// dome (a small sensor knob on its front shoulder), a mount block tapering
+// into a long thin cannon well past the nose, and a hatch disc between the
+// dome and the nose. The screen-used red/orange edge trim collapses to the
+// single `palette.hostile` colour on purpose: two colour roles only, so a
+// player can tell friend from threat at a glance.
 fn tank(batch: &mut LineBatch, pos: Vec3, yaw: f32, color: [f32; 3]) {
     let (s, c) = yaw.sin_cos();
     let rot = |v: Vec3| Vec3::new(v.x * c + v.z * s, v.y, -v.x * s + v.z * c) + pos;
-    let mut edge = |a: Vec3, b: Vec3| batch.segment(rot(a).into(), rot(b).into(), color, 2.2, 1.9);
+    const W: f32 = 2.0;
+    const I: f32 = 1.6;
 
-    // Wireframe frustum: a rectangular ring at y0 sized (hw0, hl0) connected
-    // to another at y1 sized (hw1, hl1). A box is just hw0==hw1, hl0==hl1.
-    let mut frustum = |hw0: f32, hl0: f32, y0: f32, hw1: f32, hl1: f32, y1: f32| {
-        let sx = [-1.0f32, 1.0, 1.0, -1.0];
-        let sz = [-1.0f32, -1.0, 1.0, 1.0];
-        let lo = |i: usize| Vec3::new(sx[i] * hw0, y0, sz[i] * hl0);
-        let hi = |i: usize| Vec3::new(sx[i] * hw1, y1, sz[i] * hl1);
-        for i in 0..4 {
-            let j = (i + 1) % 4;
-            edge(lo(i), lo(j));
-            edge(hi(i), hi(j));
-            edge(lo(i), hi(i));
-        }
-    };
-
-    // Low, wide wedge hull: sides slope inward toward a flat deck instead of
-    // sitting under a turret.
-    let (hw, hl, hh) = (4.2, 6.5, 1.6);
-    frustum(hw, hl, 0.0, hw * 0.72, hl * 0.9, hh);
-
-    // Raised center cabin -- the one tall feature, sat mid-deck.
-    let (cw, cl, ch) = (hw * 0.4, hl * 0.42, 1.5);
-    frustum(cw, cl, hh, cw * 0.85, cl * 0.85, hh + ch);
-
-    // Twin tread skirts along the flanks, long and low, same at both ends.
-    let (tw, tl, th) = (0.9, hl * 0.95, hh * 0.55);
-    for side in [-1.0f32, 1.0] {
-        let cx = side * (hw - tw * 0.5 - 0.1);
-        let sx = [-1.0f32, 1.0, 1.0, -1.0];
-        let sz = [-1.0f32, -1.0, 1.0, 1.0];
-        let lo = |i: usize| Vec3::new(cx + sx[i] * tw * 0.5, 0.0, sz[i] * tl);
-        let hi = |i: usize| Vec3::new(cx + sx[i] * tw * 0.5, th, sz[i] * tl);
-        for i in 0..4 {
-            let j = (i + 1) % 4;
-            edge(lo(i), lo(j));
-            edge(hi(i), hi(j));
-            edge(lo(i), hi(i));
+    // Wireframe frustum: an (x, z) ring `lo` at y0 connected to a same-length
+    // ring `hi` at y1. Equal rings give a box or a barrel; a shrinking ring
+    // tapers -- this one primitive is what the whole tank is built from.
+    // Free function (not a closure) so calls can interleave freely without
+    // fighting the borrow checker over a shared capture of `batch`.
+    fn frustum(
+        batch: &mut LineBatch,
+        rot: &impl Fn(Vec3) -> Vec3,
+        lo: &[(f32, f32)],
+        y0: f32,
+        hi: &[(f32, f32)],
+        y1: f32,
+        color: [f32; 3],
+    ) {
+        let n = lo.len();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            batch.segment(rot(Vec3::new(lo[i].0, y0, lo[i].1)).into(), rot(Vec3::new(lo[j].0, y0, lo[j].1)).into(), color, W, I);
+            batch.segment(rot(Vec3::new(hi[i].0, y1, hi[i].1)).into(), rot(Vec3::new(hi[j].0, y1, hi[j].1)).into(), color, W, I);
+            batch.segment(rot(Vec3::new(lo[i].0, y0, lo[i].1)).into(), rot(Vec3::new(hi[i].0, y1, hi[i].1)).into(), color, W, I);
         }
     }
+    let rect = |hw: f32, z0: f32, z1: f32| -> [(f32, f32); 4] { [(-hw, z0), (hw, z0), (hw, z1), (-hw, z1)] };
+    let octagon = |r: f32, cz: f32| -> [(f32, f32); 8] {
+        std::array::from_fn(|i| {
+            let a = i as f32 / 8.0 * std::f32::consts::TAU;
+            (a.cos() * r, a.sin() * r + cz)
+        })
+    };
+
+    // Body: a wide flat wedge, nose at -z, flat rear -- a plain triangle
+    // reads closer to the reference than any notch or taper does.
+    let (half_w, nose_z, rear_z) = (6.4, -6.2, 3.6);
+    let body = [(0.0, nose_z), (half_w, rear_z), (-half_w, rear_z)];
+    let deck = 0.55;
+    frustum(batch, &rot, &body, 0.0, &body, deck, color);
+
+    // Turret: a stepped hemisphere -- three shrinking octagons -- reads as
+    // round at this line count where a single cone-to-a-point never did.
+    let dome_cz = -1.6;
+    let dome_r = 2.1;
+    let dome = [(deck, dome_r), (deck + 0.35, dome_r * 0.88), (deck + 0.62, dome_r * 0.55), (deck + 0.85, dome_r * 0.12)];
+    for w in dome.windows(2) {
+        frustum(batch, &rot, &octagon(w[0].1, dome_cz), w[0].0, &octagon(w[1].1, dome_cz), w[1].0, color);
+    }
+
+    // Secondary sensor ball riding the dome's front shoulder.
+    let knob_cz = dome_cz - dome_r * 0.7;
+    let knob = [(deck + 0.5, 0.55), (deck + 0.78, 0.32), (deck + 0.95, 0.08)];
+    for w in knob.windows(2) {
+        frustum(batch, &rot, &octagon(w[0].1, knob_cz), w[0].0, &octagon(w[1].1, knob_cz), w[1].0, color);
+    }
+
+    // Cannon: a stubby mount block narrowing into a long thin barrel that
+    // projects well past the nose.
+    let mount_cz = dome_cz - dome_r * 0.9;
+    frustum(batch, &rot, &rect(0.55, mount_cz - 0.7, mount_cz + 0.7), deck + 0.15, &rect(0.22, mount_cz - 0.7, mount_cz + 0.7), deck + 0.55, color);
+    let barrel_y = deck + 0.35;
+    let barrel_front = nose_z - 5.2;
+    let barrel = rect(0.16, barrel_front, mount_cz);
+    frustum(batch, &rot, &barrel, barrel_y - 0.16, &barrel, barrel_y + 0.16, color);
+
+    // Hatch: a low disc on the deck between the dome and the nose, with a
+    // chevron scored into it.
+    let hatch_cz = (dome_cz + nose_z) * 0.5;
+    let hatch = octagon(1.0, hatch_cz);
+    frustum(batch, &rot, &hatch, deck, &hatch, deck + 0.1, color);
+    let chev_y = deck + 0.1;
+    batch.segment(rot(Vec3::new(-0.5, chev_y, hatch_cz - 0.3)).into(), rot(Vec3::new(0.0, chev_y, hatch_cz + 0.35)).into(), color, W, I);
+    batch.segment(rot(Vec3::new(0.5, chev_y, hatch_cz - 0.3)).into(), rot(Vec3::new(0.0, chev_y, hatch_cz + 0.35)).into(), color, W, I);
 }
