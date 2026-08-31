@@ -202,7 +202,7 @@ pub fn watch() -> Option<Receiver<Palette>> {
             let _ = watcher.watch(parent, RecursiveMode::NonRecursive);
         }
 
-        for event in raw_rx {
+        for event in &raw_rx {
             if event.is_err() {
                 continue;
             }
